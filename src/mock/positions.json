@@ -1,0 +1,39 @@
+[
+  {
+    "expiry": "10 FEB 2026",
+    "symbol": "NIFTY",
+    "optionType": "Buy - CE",
+    "strike": "26300",
+    "netQty": 195,
+    "avgPrice": 30.5,
+    "ltp": 89.47,
+    "unrealized": 11500,
+    "raw": {
+      "AvgCFPrice": 30.5,
+      "AvgCFQty": 30.5,
+      "AvgRate": 30.5,
+      "BodQty": 195,
+      "BookedPL": 0,
+      "BuyAvgRate": 0,
+      "BuyQty": 0,
+      "BuyValue": 0,
+      "CFQty": 195,
+      "ConvertedQty": 0,
+      "Exch": "N",
+      "ExchType": "D",
+      "LTP": 89.47,
+      "LotSize": 65,
+      "MTOM": 11500,
+      "Multiplier": 1,
+      "NetQty": 195,
+      "OrderFor": "D",
+      "PreviousClose": 24.35,
+      "ScripCode": 42562,
+      "ScripName": "NIFTY 10 FEB 2026 CE 26300.00",
+      "SellAvgRate": 0,
+      "SellQty": 0,
+      "SellValue": 0,
+      "isPhysicalDelivery": false
+    }
+  }
+]
