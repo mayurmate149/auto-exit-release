@@ -1,0 +1,40 @@
+{
+  "name": "auto-exit-trade",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "flatpickr": "^4.6.13",
+    "mongodb": "^7.0.0",
+    "next": "16.1.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-toastify": "^11.0.5",
+    "tailwind-merge": "^3.4.0"
+  },
+  "devDependencies": {
+    "@svgr/webpack": "^8.1.0",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "25.0.5",
+    "@types/react": "19.2.7",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.1",
+    "tailwindcss": "^4"
+  },
+  "overrides": {
+    "@react-jvectormap/core": {
+      "react": "^16.8.0 || ^17 || ^18 || ^19",
+      "react-dom": "^16.8.0 || ^17 || ^18 || ^19"
+    },
+    "@react-jvectormap/world": {
+      "react": "^16.8.0 || ^17 || ^18 || ^19",
+      "react-dom": "^16.8.0 || ^17 || ^18 || ^19"
+    }
+  }
+}
