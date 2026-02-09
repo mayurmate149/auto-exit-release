@@ -1,8 +1,9 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 
-export default function CallbackPage() {
+
+function CallbackPageContent() {
   const router = useRouter();
   const params = useSearchParams();
   const [loading, setLoading] = useState(true);
@@ -42,4 +43,12 @@ export default function CallbackPage() {
   if (loading) return <div>Processing 5paisa login...</div>;
   if (err) return <div>Error: {err}</div>;
   return <div>Redirecting...</div>;
+}
+
+export default function CallbackPage() {
+  return (
+    <Suspense fallback={<div>Processing 5paisa login...</div>}>
+      <CallbackPageContent />
+    </Suspense>
+  );
 }
