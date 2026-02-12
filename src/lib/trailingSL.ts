@@ -31,13 +31,17 @@ export function calculateTrailingStopLoss(
   let newTrailingLevelPct = lastTrailingLevelPct;
 
   // 2. Break-even rule
+  let breakEvenTriggered = false;
   if (currentMtmPct >= settings.breakEvenTriggerPct) {
     stopLossPct = Math.max(stopLossPct, 0);
+    breakEvenTriggered = true;
   }
 
   // 3. Profit lock rule
+  let profitLockTriggered = false;
   if (currentMtmPct >= settings.profitLockTriggerPct) {
     stopLossPct = Math.max(stopLossPct, settings.lockedProfitPct);
+    profitLockTriggered = true;
   }
 
   // 4. Continuous trailing (after profit lock trigger)
@@ -53,7 +57,8 @@ export function calculateTrailingStopLoss(
       const steps = Math.floor((currentMtmPct - lastLevel) / settings.trailingStepPct);
       const newLevel = lastLevel + steps * settings.trailingStepPct;
       // New trailing stop loss
-      const trailingStopLoss = currentMtmPct - settings.trailingGapPct;
+      let trailingStopLoss = currentMtmPct - settings.trailingGapPct;
+      trailingStopLoss = Math.max(trailingStopLoss, 0);
       stopLossPct = Math.max(previousStopLossPct, stopLossPct, trailingStopLoss);
       newTrailingLevelPct = newLevel;
     } else {
@@ -66,7 +71,16 @@ export function calculateTrailingStopLoss(
   }
 
   // 5. Stop loss must never decrease
-  stopLossPct = Math.max(previousStopLossPct, stopLossPct);
+  // Clamp to zero only after break-even or profit lock triggers
+  if (breakEvenTriggered || profitLockTriggered) {
+    stopLossPct = Math.max(previousStopLossPct, stopLossPct, 0);
+  } else {
+    stopLossPct = Math.max(previousStopLossPct, stopLossPct);
+    // Ensure initial stop loss stays negative if MTM < breakEvenTriggerPct
+    if (previousStopLossPct === 0 && currentMtmPct < settings.breakEvenTriggerPct) {
+      stopLossPct = -Math.abs(settings.initialStopLossPct);
+    }
+  }
 
   // 6. Always keep hard stop loss active (already enforced by above)
 
