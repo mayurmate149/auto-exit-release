@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import { addLog } from "@/lib/logStore";
 
 const POSITIONS_PATH = path.join(process.cwd(), "src/mock/positions.json");
 

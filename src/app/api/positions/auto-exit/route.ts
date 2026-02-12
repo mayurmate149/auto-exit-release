@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { decrypt } from "../../../../lib/encrypt";
+import { addLog } from "../../../../lib/logStore";
 
 const PLACE_ORDER_URL =
   "https://Openapi.5paisa.com/VendorsAPI/Service1.svc/V1/PlaceOrderRequest";
@@ -8,6 +9,7 @@ export async function POST(req: NextRequest) {
   /* ───────────── AUTH ───────────── */
   const cookie = req.cookies.get("x5p_session")?.value;
   if (!cookie) {
+    addLog("warn", "Auto-exit: Not authenticated", { endpoint: "auto-exit", reason: "missing_cookie" });
     return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
   }
 
@@ -15,15 +17,18 @@ export async function POST(req: NextRequest) {
   try {
     session = JSON.parse(decrypt(cookie, process.env.SESSION_SECRET!));
   } catch {
+    addLog("warn", "Auto-exit: Invalid session", { endpoint: "auto-exit", reason: "invalid_session" });
     return NextResponse.json({ error: "invalid_session" }, { status: 401 });
   }
 
   const { accessToken } = session;
   if (!accessToken) {
+    addLog("warn", "Auto-exit: Missing access token", { endpoint: "auto-exit", reason: "missing_access_token" });
     return NextResponse.json({ error: "missing_access_token" }, { status: 401 });
   }
 
   /* ───────── FETCH POSITIONS ───────── */
+  addLog("info", "Auto-exit: Fetching positions", { endpoint: "auto-exit" });
   const posRes = await fetch(`${req.nextUrl.origin}/api/positions`, {
     headers: { Cookie: req.headers.get("cookie") || "" },
     cache: "no-store",
@@ -33,7 +38,6 @@ export async function POST(req: NextRequest) {
   const positions = Array.isArray(posJson.positions)
     ? posJson.positions
     : [];
-
   /* ───── FILTER: OPTIONS ONLY (CE/PE) ───── */
   const optionPositions = positions.filter((p: any) => {
     const raw = p.raw || {};
@@ -49,7 +53,10 @@ export async function POST(req: NextRequest) {
     );
   });
 
+  addLog("info", "Auto-exit: Option positions filtered", { endpoint: "auto-exit", count: optionPositions.length });
+
   if (optionPositions.length === 0) {
+    addLog("info", "Auto-exit: No open option positions", { endpoint: "auto-exit" });
     return NextResponse.json({
       success: true,
       message: "No open option positions",
@@ -101,7 +108,22 @@ export async function POST(req: NextRequest) {
 
       text = await res.text();
       parsed = JSON.parse(text);
+      addLog("info", "Auto-exit: Order placed", {
+        endpoint: "auto-exit",
+        scripCode: raw.ScripCode,
+        scripName: raw.ScripName,
+        qty,
+        response: parsed,
+      });
     } catch {
+      addLog("error", "Auto-exit: Order placement failed", {
+        endpoint: "auto-exit",
+        scripCode: raw.ScripCode,
+        scripName: raw.ScripName,
+        qty,
+        error: "NON_JSON_RESPONSE",
+        raw: text,
+      });
       parsed = { error: "NON_JSON_RESPONSE", raw: text };
     }
 
@@ -114,6 +136,7 @@ export async function POST(req: NextRequest) {
   }
 
   /* ───────── RESPONSE ───────── */
+  addLog("info", "Auto-exit: Exit orders completed", { endpoint: "auto-exit", exitedCount: results.length });
   return NextResponse.json({
     success: true,
     exitedCount: results.length,

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import { decrypt } from "../../../lib/encrypt";
+import { addLog } from "../../../lib/logStore";
 // Use dynamic import for JSON in API route
 
 const POSITIONS_URL = "https://Openapi.5paisa.com/VendorsAPI/Service1.svc/V3/NetPositionNetWise"; // as per SDK/docs
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
 
   const cookie = req.cookies.get("x5p_session")?.value;
   if (!cookie) {
-    // Return mock positions for testing if not authenticated
+    addLog("warn", "Positions: Not authenticated, returning mock positions", { endpoint: "positions" });
     const { default: mockPositions } = await import('../../../mock/positions.json');
     return NextResponse.json({ success: true, positions: mockPositions });
   }
@@ -25,11 +26,13 @@ export async function GET(req: NextRequest) {
   try {
     session = JSON.parse(decrypt(cookie, secret));
   } catch {
+    addLog("warn", "Positions: Invalid session", { endpoint: "positions" });
     return NextResponse.json({ error: "invalid_session" }, { status: 401 });
   }
 
   const { accessToken, clientCode } = session;
   if (!accessToken || !clientCode) {
+    addLog("warn", "Positions: Missing credentials", { endpoint: "positions" });
     return NextResponse.json({ error: "missing_credentials" }, { status: 401 });
   }
 
@@ -37,6 +40,7 @@ export async function GET(req: NextRequest) {
     head: { key: process.env.FIVEPAISA_APP_KEY },
     body: { ClientCode: clientCode },
   };
+  addLog("info", "Positions: Fetching from external API", { endpoint: "positions", clientCode });
 
   const apiRes = await fetch(POSITIONS_URL, {
     method: "POST",

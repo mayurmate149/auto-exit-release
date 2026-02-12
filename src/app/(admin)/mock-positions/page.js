@@ -186,7 +186,7 @@ export default function MockPositionsPage() {
       fetch('/api/positions/auto-exit-monitor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'start', initialUnrealized: totalUnrealized })
+        body: JSON.stringify({ action: autoUpdate, initialUnrealized: totalUnrealized })
       });
       return updated;
     });

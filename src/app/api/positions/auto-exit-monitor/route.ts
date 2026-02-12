@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { calculateTrailingStopLoss } from "../../../../lib/trailingSL";
+import { addLog } from "../../../../lib/logStore";
 import { connectToDatabase } from "../../../../lib/mongodb";
 import type { NextRequest } from "next/server";
 import { getAbsoluteUrl, getCookieHeader } from "../../../../lib/apiUtils";
@@ -15,6 +16,7 @@ let autoExitState = {
   summary: null as any,
   logs: [] as string[],
 };
+addLog("info", "Auto-exit-monitor: Initialized state", { endpoint: "auto-exit-monitor" });
 
 
 // Helper to get headers as HeadersInit
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest) {
   if (action === "start") {
     if (autoExitState.running) {
       autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Start requested but already running.`);
-      console.log("[AutoExit] Start requested but already running.");
+      addLog("warn", "Auto-exit-monitor: Start requested but already running", { endpoint: "auto-exit-monitor" });
       return NextResponse.json({ success: false, error: "Already running" });
     }
     autoExitState.running = true;
@@ -72,12 +74,10 @@ export async function POST(req: NextRequest) {
     autoExitState.cutReason = null;
     autoExitState.summary = null;
     autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Auto-exit started.`);
-    console.log("[AutoExit] Auto-exit started.");
-    // Fetch settings for interval
+    addLog("info", "Auto-exit-monitor: Auto-exit started", { endpoint: "auto-exit-monitor" });
     const settingsData = await fetchSettings(req);
     const pollInterval = Number(settingsData.settings?.schedulerFrequency) || 2000;
     const capital = Number(settingsData.settings?.totalCapital) || 0;
-    // Trailing SL settings (all as numbers)
     const trailingSettings = {
       initialStopLossPct: Number(settingsData.settings?.initialStopLossPct) || 1,
       breakEvenTriggerPct: Number(settingsData.settings?.breakEvenTriggerPct) || 1,
@@ -98,7 +98,6 @@ export async function POST(req: NextRequest) {
         autoExitState.mtm = total;
         // Calculate MTM as percent of capital
         const currentMtmPct = capital ? (total / capital) * 100 : 0;
-        // Use trailing SL logic
         const result = calculateTrailingStopLoss(
           trailingSettings,
           currentMtmPct,
@@ -108,7 +107,6 @@ export async function POST(req: NextRequest) {
         // Convert stopLossPct back to value
         const trailing = capital * (result.stopLossPct / 100);
         autoExitState.trailingSL = trailing;
-        autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] MTM: ₹${total}, Trailing SL: ₹${trailing} (${result.stopLossPct.toFixed(2)}%)`);
         // Only update DB if values changed
         if (lastTrailing !== trailing || lastMTM !== total) {
           try {
@@ -131,7 +129,7 @@ export async function POST(req: NextRequest) {
             lastTrailing = trailing;
             lastMTM = total;
           } catch (err) {
-            console.error('[AutoExit] Failed to save trailing SL to DB:', err);
+            addLog("error", "Auto-exit-monitor: Failed to save trailing SL to DB", { endpoint: "auto-exit-monitor", error: err });
           }
         }
         // Update trailing state for next tick
@@ -141,20 +139,12 @@ export async function POST(req: NextRequest) {
           autoExitState.running = false;
           autoExitState.exited = true;
           autoExitState.cutReason = `MTM hit trailing stop loss (₹${trailing}). Trade auto-cut.`;
-          autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Auto-exit triggered. MTM hit trailing stop loss (₹${trailing}).`);
-          console.log(`[AutoExit] Auto-exit triggered. MTM hit trailing stop loss (₹${trailing}).`);
-          // Log to MongoDB
-          try {
-            const { db } = await connectToDatabase();
-            await db.collection('activity_logs').insertOne({
-              type: 'auto_exit',
-              timestamp: new Date(),
-              reason: autoExitState.cutReason,
-              details: `MTM: ₹${total}, Trailing SL: ₹${trailing}`,
-            });
-          } catch (err) {
-            console.error('[AutoExit] Failed to log auto exit to DB:', err);
-          }
+          addLog("info", "Auto-exit-monitor: MTM hit trailing stop loss", {
+            endpoint: "auto-exit-monitor",
+            reason: autoExitState.cutReason,
+            mtm: total,
+            trailingSL: trailing
+          });
           clearInterval(autoExitState.interval!);
           autoExitState.interval = null;
           autoExitState.summary = await exitAll(req);
@@ -163,7 +153,7 @@ export async function POST(req: NextRequest) {
         autoExitState.running = false;
         autoExitState.cutReason = "Error in auto-exit monitoring.";
         autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Error in auto-exit monitoring.`);
-        console.log("[AutoExit] Error in auto-exit monitoring.");
+        addLog("error", "Auto-exit-monitor: Error in auto-exit monitoring", { endpoint: "auto-exit-monitor", error: e });
         clearInterval(autoExitState.interval!);
         autoExitState.interval = null;
       }
@@ -173,17 +163,17 @@ export async function POST(req: NextRequest) {
     if (autoExitState.interval) {
       clearInterval(autoExitState.interval);
       autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Cleared backend polling interval.`);
-      console.log("[AutoExit] Cleared backend polling interval.");
+      addLog("info", "Auto-exit-monitor: Cleared backend polling interval", { endpoint: "auto-exit-monitor" });
     } else {
       autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Stop requested but no interval was running.`);
-      console.log("[AutoExit] Stop requested but no interval was running.");
+      addLog("warn", "Auto-exit-monitor: Stop requested but no interval was running", { endpoint: "auto-exit-monitor" });
     }
     autoExitState.running = false;
     autoExitState.exited = false;
     autoExitState.cutReason = "Stopped by user.";
     autoExitState.interval = null;
     autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Auto-exit stopped by user.`);
-    console.log("[AutoExit] Auto-exit stopped by user.");
+    addLog("info", "Auto-exit-monitor: Auto-exit stopped by user", { endpoint: "auto-exit-monitor" });
     return NextResponse.json({ success: true });
   }
   return NextResponse.json({ success: false, error: "Invalid action" });
