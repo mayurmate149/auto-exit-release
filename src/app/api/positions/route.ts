@@ -40,7 +40,6 @@ export async function GET(req: NextRequest) {
     head: { key: process.env.FIVEPAISA_APP_KEY },
     body: { ClientCode: clientCode },
   };
-  addLog("info", "Positions: Fetching from external API", { endpoint: "positions", clientCode });
 
   const apiRes = await fetch(POSITIONS_URL, {
     method: "POST",
@@ -116,3 +115,4 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({ success: true, positions: mapped });
 }
+
