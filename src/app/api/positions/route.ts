@@ -9,7 +9,7 @@ const POSITIONS_URL = "https://Openapi.5paisa.com/VendorsAPI/Service1.svc/V3/Net
 export async function GET(req: NextRequest) {
 
   // If DISPLAY_MOCK_DATA env flag is set, always return mock data
-  if (process.env.DISPLAY_MOCK_DATA === 'true') {
+  if (process.env.NEXT_PUBLIC_DISPLAY_MOCK_DATA === 'true') {
     const { default: mockPositions } = await import('../../../mock/positions.json');
     return NextResponse.json({ success: true, positions: mockPositions });
   }

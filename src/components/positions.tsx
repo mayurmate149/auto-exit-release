@@ -4,6 +4,10 @@ import React, { useEffect, useState, useCallback } from "react";
 import { showToast } from "./common/Toaster";
 import MockMarketControls from "./MockMarketControls";
 
+const MOCK_UI_ENABLED =
+  process.env.NEXT_PUBLIC_DISPLAY_MOCK_DATA === "true" ||
+  process.env.DISPLAY_MOCK_DATA === "true";
+
 async function fetchTrailingSLStatus() {
   const res = await fetch("/api/positions/auto-exit-monitor", { cache: "no-store" });
   if (!res.ok) throw new Error(await res.text());
@@ -443,7 +447,7 @@ export default function OptionsPositionsWidget() {
 
   return (
     <div className="p-4">
-      {process.env.DISPLAY_MOCK_DATA === 'true' && <MockMarketControls />}
+      {MOCK_UI_ENABLED && <MockMarketControls />}
       {/* Max Profit/Loss/SL Cards */}
       <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl">
         {settings && (
