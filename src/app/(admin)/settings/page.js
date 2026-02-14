@@ -164,9 +164,13 @@ export default function Settings() {
         <div className="p-5 border border-gray-200 rounded-2xl dark:border-gray-800 lg:p-6">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                    <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90 lg:mb-6">
+                    <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90 lg:mb-2">
                         Settings
                     </h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-6 max-w-2xl">
+                        Tune the guardrails for auto-exit. The first section covers how much capital you are comfortable risking or locking in. The second section controls
+                        when the system begins protecting profits automatically. Numbers are in percentages of your total trading capital unless noted otherwise.
+                    </p>
 
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-7 2xl:gap-x-32">
                         <div>
@@ -181,7 +185,7 @@ export default function Settings() {
                         <div>
                             <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400 flex items-center gap-1">
                                 Max Loss Allowed (%)
-                                <span title="Maximum loss allowed as a percentage of capital before auto-exit triggers.">
+                                <span title="If your combined positions lose more than this percent of capital, the system cuts all trades.">
                                     <svg width="14" height="14" fill="none" viewBox="0 0 20 20" className="inline-block text-blue-400"><circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" fill="none"/><text x="6" y="15" fontSize="12" fill="currentColor">?</text></svg>
                                 </span>
                             </p>
@@ -199,7 +203,7 @@ export default function Settings() {
                         <div>
                             <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400 flex items-center gap-1">
                                 Max Profit Allowed (%)
-                                <span title="Maximum profit allowed as a percentage of capital before auto-exit triggers.">
+                                <span title="If profits reach this percent, the system can secure gains by exiting positions.">
                                     <svg width="14" height="14" fill="none" viewBox="0 0 20 20" className="inline-block text-blue-400"><circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" fill="none"/><text x="6" y="15" fontSize="12" fill="currentColor">?</text></svg>
                                 </span>
                             </p>
@@ -217,7 +221,7 @@ export default function Settings() {
                         <div>
                             <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400 flex items-center gap-1">
                                 Scheduler Frequency (ms)
-                                <span title="How often (in ms) the system checks positions and updates trailing stop loss.">
+                                <span title="How frequently the auto-exit engine checks the market (milliseconds). Lower numbers mean quicker reactions.">
                                     <svg width="14" height="14" fill="none" viewBox="0 0 20 20" className="inline-block text-blue-400"><circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" fill="none"/><text x="6" y="15" fontSize="12" fill="currentColor">?</text></svg>
                                 </span>
                             </p>
@@ -226,7 +230,7 @@ export default function Settings() {
                         <div>
                             <p className="mb-2 text-xs leading-normal text-gray-500 dark:text-gray-400 flex items-center gap-1">
                                 StopLoss Trailing
-                                <span title="Enable or disable the trailing stop loss system.">
+                                <span title="Turn the auto-exit protection on or off. When Off, no automatic exits happen.">
                                     <svg width="14" height="14" fill="none" viewBox="0 0 20 20" className="inline-block text-blue-400"><circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" fill="none"/><text x="6" y="15" fontSize="12" fill="currentColor">?</text></svg>
                                 </span>
                             </p>
@@ -379,7 +383,11 @@ export default function Settings() {
                                 </div>
                                 {/* Trailing Stop Loss Settings */}
                                 <div className="col-span-2 mt-6">
-                                    <h5 className="font-semibold mb-2 text-md text-gray-700 dark:text-white/80">Trailing Stop Loss Settings</h5>
+                                    <h5 className="font-semibold mb-1 text-md text-gray-700 dark:text-white/80">Trailing Stop Loss Settings</h5>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                                        These numbers decide how quickly the system moves your stop loss upward once trades start making money. Set gentle values if you want
+                                        more breathing room, or aggressive values if you prefer to lock gains sooner.
+                                    </p>
                                     <div className="grid grid-cols-1 gap-x-6 gap-y-5 lg:grid-cols-3">
                                         <div>
                                             <Label>Initial Stop Loss (%)</Label>
