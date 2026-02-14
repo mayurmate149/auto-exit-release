@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { showToast } from "./common/Toaster";
+import MockMarketControls from "./MockMarketControls";
 
 async function fetchTrailingSLStatus() {
   const res = await fetch("/api/positions/auto-exit-monitor", { cache: "no-store" });
@@ -268,10 +269,24 @@ export default function OptionsPositionsWidget() {
     const res = await fetch('/api/positions/auto-exit', { method: 'POST' });
     const result = await res.json();
     setAutoExitResult(result);
+    if (!res.ok || result.success === false) {
+      const errorMsg = result.error || result.reason || 'Failed to exit positions.';
+      showToast(errorMsg, { type: 'error' });
+      setCutReason(errorMsg);
+      return;
+    }
     if (result.exited) {
       showToast(result.reason || 'Exited positions successfully.', { type: 'success' });
     } else if (result.reason) {
       showToast(result.reason, { type: 'info' });
+    }
+    if (result.reason) {
+      setCutReason(result.reason);
+    } else if (result.exitedCount || (result.results && result.results.length)) {
+      const exitedCount = result.exitedCount ?? result.results.length;
+      setCutReason(`Exit orders submitted for ${exitedCount} position${exitedCount === 1 ? '' : 's'}.`);
+    } else {
+      setCutReason('Exit orders submitted.');
     }
   }, []);
 
@@ -300,6 +315,8 @@ export default function OptionsPositionsWidget() {
       })
       .catch(() => { });
   }, []);
+
+  const effectiveCutReason = cutReason ?? trailingSLStatus?.cutReason ?? null;
 
   // Polling effect for Live mode
   useEffect(() => {
@@ -426,6 +443,7 @@ export default function OptionsPositionsWidget() {
 
   return (
     <div className="p-4">
+      {process.env.DISPLAY_MOCK_DATA === 'true' && <MockMarketControls />}
       {/* Max Profit/Loss/SL Cards */}
       <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl">
         {settings && (
@@ -505,8 +523,8 @@ export default function OptionsPositionsWidget() {
         </div>
       </div>
 
-      {cutReason && (
-        <div className="mb-4 p-2 bg-yellow-100 text-yellow-800 rounded">{cutReason}</div>
+      {effectiveCutReason && (
+        <div className="mb-4 p-2 bg-yellow-100 text-yellow-800 rounded">{effectiveCutReason}</div>
       )}
       {positions.length === 0 ? (
         <>
