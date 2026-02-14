@@ -6,6 +6,7 @@ import Button from "@/components/ui/button/Button";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
 import Loader from "@/components/ui/loader/Loader";
+import { showToast } from "@/components/common/Toaster";
 
 
 function calculateAmounts(totalCapital, maxLossPercent, maxProfitPercent) {
@@ -37,6 +38,7 @@ export default function Settings() {
         trailingGapPct: "0.5",
     });
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
     const [modalSettings, setModalSettings] = useState({
         totalCapital: "",
         maxLossPercent: "",
@@ -60,63 +62,53 @@ export default function Settings() {
         _openModal();
     }, [settings, _openModal]);
 
-    // Fetch settings on mount
-    useEffect(() => {
-        async function fetchSettings() {
-            setLoading(true);
-            try {
-                const res = await fetch("/api/settings");
-                const data = await res.json();
-                if (data.success && data.settings) {
-                    const { _id, ...rest } = data.settings;
-                    const { maxLossAmount, maxProfitAmount } = calculateAmounts(
-                        rest.totalCapital,
-                        rest.maxLossPercent,
-                        rest.maxProfitPercent
-                    );
-                    setSettings({
-                        totalCapital: rest.totalCapital || "",
-                        maxLossPercent: rest.maxLossPercent || "",
-                        maxLossAmount,
-                        maxProfitPercent: rest.maxProfitPercent || "",
-                        maxProfitAmount,
-                        schedulerFrequency: rest.schedulerFrequency || "",
-                        stopLossTrailing: typeof rest.stopLossTrailing === "boolean" ? rest.stopLossTrailing : false,
-                        initialStopLossPct: rest.initialStopLossPct || "1",
-                        breakEvenTriggerPct: rest.breakEvenTriggerPct || "1",
-                        profitLockTriggerPct: rest.profitLockTriggerPct || "2",
-                        lockedProfitPct: rest.lockedProfitPct || "1",
-                        trailingStepPct: rest.trailingStepPct || "1",
-                        trailingGapPct: rest.trailingGapPct || "0.5",
-                    });
-                    setModalSettings({
-                        totalCapital: rest.totalCapital || "",
-                        maxLossPercent: rest.maxLossPercent || "",
-                        maxLossAmount,
-                        maxProfitPercent: rest.maxProfitPercent || "",
-                        maxProfitAmount,
-                        schedulerFrequency: rest.schedulerFrequency || "",
-                        stopLossTrailing: typeof rest.stopLossTrailing === "boolean" ? rest.stopLossTrailing : false,
-                        initialStopLossPct: rest.initialStopLossPct || "1",
-                        breakEvenTriggerPct: rest.breakEvenTriggerPct || "1",
-                        profitLockTriggerPct: rest.profitLockTriggerPct || "2",
-                        lockedProfitPct: rest.lockedProfitPct || "1",
-                        trailingStepPct: rest.trailingStepPct || "1",
-                        trailingGapPct: rest.trailingGapPct || "0.5",
-                    });
-                }
-            } catch (err) {
-                // Optionally handle error
-            } finally {
-                setLoading(false);
+    const fetchSettings = useCallback(async () => {
+        setLoading(true);
+        try {
+            const res = await fetch("/api/settings");
+            const data = await res.json();
+            if (res.ok && data.settings) {
+                const { _id, ...rest } = data.settings;
+                const { maxLossAmount, maxProfitAmount } = calculateAmounts(
+                    rest.totalCapital,
+                    rest.maxLossPercent,
+                    rest.maxProfitPercent
+                );
+                const nextSettings = {
+                    totalCapital: rest.totalCapital || "",
+                    maxLossPercent: rest.maxLossPercent || "",
+                    maxLossAmount,
+                    maxProfitPercent: rest.maxProfitPercent || "",
+                    maxProfitAmount,
+                    schedulerFrequency: rest.schedulerFrequency || "",
+                    stopLossTrailing: typeof rest.stopLossTrailing === "boolean" ? rest.stopLossTrailing : false,
+                    initialStopLossPct: rest.initialStopLossPct || "1",
+                    breakEvenTriggerPct: rest.breakEvenTriggerPct || "1",
+                    profitLockTriggerPct: rest.profitLockTriggerPct || "2",
+                    lockedProfitPct: rest.lockedProfitPct || "1",
+                    trailingStepPct: rest.trailingStepPct || "1",
+                    trailingGapPct: rest.trailingGapPct || "0.5",
+                };
+                setSettings(nextSettings);
+                setModalSettings(nextSettings);
+            } else if (!res.ok) {
+                showToast(data.error || "Failed to load settings", { type: "error" });
             }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Failed to load settings";
+            showToast(message, { type: "error" });
+        } finally {
             setLoading(false);
         }
-        fetchSettings();
     }, []);
+
+    useEffect(() => {
+        fetchSettings();
+    }, [fetchSettings]);
 
     const handleSave = useCallback(async (e) => {
         e.preventDefault();
+        setSaving(true);
         try {
             const res = await fetch("/api/settings", {
                 method: "POST",
@@ -124,17 +116,21 @@ export default function Settings() {
                 body: JSON.stringify(modalSettings),
             });
             const data = await res.json();
-            if (data.success) {
-                setStatus("Settings saved successfully.");
-                setSettings({ ...modalSettings });
+            if (res.ok && data.success) {
+                showToast("Settings saved successfully.", { type: "success" });
                 closeModal();
+                await fetchSettings();
             } else {
-                // setStatus("Failed to save settings: " + (data.error || "Unknown error"));
+                const message = data.error || "Failed to save settings";
+                showToast(message, { type: "error" });
             }
         } catch (err) {
-            // setStatus("Error: " + err.message);
+            const message = err instanceof Error ? err.message : "Failed to save settings";
+            showToast(message, { type: "error" });
+        } finally {
+            setSaving(false);
         }
-    }, [modalSettings, closeModal]);
+    }, [modalSettings, closeModal, fetchSettings]);
 
     // Handle input changes
     const handleModalChange = useCallback((e) => {
@@ -417,8 +413,8 @@ export default function Settings() {
                             <Button size="sm" variant="outline" onClick={closeModal}>
                                 Close
                             </Button>
-                            <Button size="sm" onClick={handleSave}>
-                                Save Changes
+                            <Button size="sm" onClick={handleSave} disabled={saving}>
+                                {saving ? "Saving..." : "Save Changes"}
                             </Button>
                         </div>
                     </form>
