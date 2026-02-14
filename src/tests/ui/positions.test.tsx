@@ -1,11 +1,34 @@
 import '@testing-library/jest-dom';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+
+jest.mock('../../components/common/Toaster', () => ({
+	showToast: jest.fn(),
+}));
+
+import { showToast } from '../../components/common/Toaster';
 import OptionsPositionsWidget from '../../components/positions';
+
+function bodyToString(init?: RequestInit) {
+	if (!init || init.body == null) return '';
+	const { body } = init;
+	if (typeof body === 'string') return body;
+	try {
+		return String(body);
+	} catch {
+		return '';
+	}
+}
 
 // Mock fetch globally
 beforeAll(() => {
 	global.fetch = jest.fn((url) => {
+		if (url.includes('trailing-sl-status/clear')) {
+			return Promise.resolve({
+				ok: true,
+				json: () => Promise.resolve({ success: true }),
+			});
+		}
 		if (url.includes('trailing-sl-status')) {
 			return Promise.resolve({
 				ok: true,
@@ -41,6 +64,12 @@ describe('OptionsPositionsWidget', () => {
 		jest.resetAllMocks();
 		// Restore default fetch mock for all tests except error state
 		global.fetch = jest.fn((url) => {
+			if (url.includes('trailing-sl-status/clear')) {
+				return Promise.resolve({
+					ok: true,
+					json: () => Promise.resolve({ success: true }),
+				});
+			}
 			if (url.includes('trailing-sl-status')) {
 				return Promise.resolve({
 					ok: true,
@@ -153,5 +182,76 @@ describe('OptionsPositionsWidget', () => {
 			expect(screen.getByTestId('exit-all-btn')).toBeDisabled();
 		});
 	});
+
+	it('does not show mock controls when feature flag is off', async () => {
+		render(<OptionsPositionsWidget />);
+		await waitFor(() => expect(screen.getByText('ABC')).toBeInTheDocument());
+		expect(screen.queryByText(/Mock Market Move/i)).toBeNull();
+	});
+
+	it('clears trailing stop loss and shows success toast', async () => {
+		const fetchMock = global.fetch as jest.Mock;
+		render(<OptionsPositionsWidget />);
+		const clearButton = await screen.findByTestId('clear-trailing-sl-btn');
+		expect(clearButton).not.toBeDisabled();
+		await waitFor(() => expect(screen.getByText('Trailing Stop Loss')).toBeInTheDocument());
+		fetchMock.mockClear();
+		fireEvent.click(clearButton);
+		await waitFor(() => {
+			const called = fetchMock.mock.calls.some(([url, options]) => {
+				if (typeof url !== 'string') return false;
+				const init = options as RequestInit | undefined;
+				return url.includes('/api/positions/trailing-sl-status/clear') && init?.method === 'POST';
+			});
+			expect(called).toBe(true);
+			expect(showToast).toHaveBeenCalledWith('Trailing Stop Loss cleared.', expect.objectContaining({ type: 'success' }));
+		});
+		await waitFor(() => expect(screen.queryByText('Trailing Stop Loss')).not.toBeInTheDocument());
+	});
+
+	it('starts and stops auto exit flow', async () => {
+		const fetchMock = global.fetch as jest.Mock;
+		render(<OptionsPositionsWidget />);
+		const startButton = await screen.findByText('Auto Exit Start');
+		fetchMock.mockClear();
+		fireEvent.click(startButton);
+		await waitFor(() => expect(screen.getByText('Auto Exit Stop')).toBeInTheDocument());
+		const startCalled = fetchMock.mock.calls.some(([url, options]) => {
+			if (typeof url !== 'string') return false;
+			const init = options as RequestInit | undefined;
+			return (
+				url.includes('/api/positions/auto-exit-monitor') &&
+				init?.method === 'POST' &&
+				bodyToString(init).includes('start')
+			);
+		});
+		expect(startCalled).toBe(true);
+		const startLogCalled = fetchMock.mock.calls.some(([url, options]) => {
+			if (typeof url !== 'string') return false;
+			const init = options as RequestInit | undefined;
+			return url.includes('/api/activity-log') && bodyToString(init).includes('auto_exit_start');
+		});
+		expect(startLogCalled).toBe(true);
+		fetchMock.mockClear();
+		const stopButton = screen.getByText('Auto Exit Stop');
+		fireEvent.click(stopButton);
+		await waitFor(() => expect(screen.getByText('Auto Exit Start')).toBeInTheDocument());
+		const stopCalled = fetchMock.mock.calls.some(([url, options]) => {
+			if (typeof url !== 'string') return false;
+			const init = options as RequestInit | undefined;
+			return (
+				url.includes('/api/positions/auto-exit-monitor') &&
+				init?.method === 'POST' &&
+				bodyToString(init).includes('stop')
+			);
+		});
+		expect(stopCalled).toBe(true);
+		const stopLogCalled = fetchMock.mock.calls.some(([url, options]) => {
+			if (typeof url !== 'string') return false;
+			const init = options as RequestInit | undefined;
+			return url.includes('/api/activity-log') && bodyToString(init).includes('auto_exit_stop');
+		});
+		expect(stopLogCalled).toBe(true);
+		await waitFor(() => expect(screen.getByText('Stopped by user.')).toBeInTheDocument());
+	});
 });
-// ...existing code...
