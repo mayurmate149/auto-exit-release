@@ -40,7 +40,11 @@ export function calculateTrailingStopLoss(
   // 3. Profit lock rule
   let profitLockTriggered = false;
   if (currentMtmPct >= settings.profitLockTriggerPct) {
-    stopLossPct = Math.max(stopLossPct, settings.lockedProfitPct);
+    stopLossPct = Math.max(
+      stopLossPct,
+      settings.lockedProfitPct,
+      settings.breakEvenTriggerPct
+    );
     profitLockTriggered = true;
   }
 
@@ -76,10 +80,6 @@ export function calculateTrailingStopLoss(
     stopLossPct = Math.max(previousStopLossPct, stopLossPct, 0);
   } else {
     stopLossPct = Math.max(previousStopLossPct, stopLossPct);
-    // Ensure initial stop loss stays negative if MTM < breakEvenTriggerPct
-    if (previousStopLossPct === 0 && currentMtmPct < settings.breakEvenTriggerPct) {
-      stopLossPct = -Math.abs(settings.initialStopLossPct);
-    }
   }
 
   // 6. Always keep hard stop loss active (already enforced by above)

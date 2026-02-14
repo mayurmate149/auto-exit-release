@@ -126,6 +126,17 @@ export async function POST(req: NextRequest) {
           lastTrailingLevelPct,
           previousStopLossPct
         );
+        console.log(
+          "[AutoExit] Evaluated trailing stop",
+          {
+            totalUnrealized: total,
+            mtmPct: currentMtmPct,
+            stopLossPct: result.stopLossPct,
+            trailingLevelPct: result.lastTrailingLevelPct,
+            shouldExit: result.shouldExit,
+            running: autoExitState.running,
+          }
+        );
         // Convert stopLossPct back to value
         const trailing = capital * (result.stopLossPct / 100);
         autoExitState.trailingSL = trailing;
@@ -140,6 +151,12 @@ export async function POST(req: NextRequest) {
         lastTrailingLevelPct = result.lastTrailingLevelPct;
         previousStopLossPct = result.stopLossPct;
         if (result.shouldExit && !autoExitState.exited) {
+          console.log("[AutoExit] Exit triggered", {
+            totalUnrealized: total,
+            trailingSL: trailing,
+            mtmPct: currentMtmPct,
+            stopLossPct: result.stopLossPct,
+          });
           autoExitState.running = false;
           autoExitState.exited = true;
           autoExitState.cutReason = `MTM hit trailing stop loss (₹${trailing}). Trade auto-cut.`;

@@ -6,7 +6,7 @@
     "strike": "26300",
     "netQty": 195,
     "avgPrice": 30.5,
-    "ltp": -2.83,
+    "ltp": 81.78,
     "unrealized": 0,
     "raw": {
       "AvgCFPrice": 30.5,
@@ -21,7 +21,7 @@
       "ConvertedQty": 0,
       "Exch": "N",
       "ExchType": "D",
-      "LTP": -2.83,
+      "LTP": 81.78,
       "LotSize": 65,
       "MTOM": 0,
       "Multiplier": 1,
