@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { calculateTrailingStopLoss } from "../../../../lib/trailingSL";
 import { addLog } from "../../../../lib/logStore";
-import { connectToDatabase } from "../../../../lib/mongodb";
 import type { NextRequest } from "next/server";
 import { getAbsoluteUrl, getCookieHeader } from "../../../../lib/apiUtils";
+import {
+  updateAutoExitSnapshot,
+  getAutoExitSnapshot,
+} from "../../../../context/AutoExitStore";
 
 // In-memory state (for demo; use Redis/db for production)
 let autoExitState = {
@@ -17,6 +20,23 @@ let autoExitState = {
   logs: [] as string[],
 };
 addLog("info", "Auto-exit-monitor: Initialized state", { endpoint: "auto-exit-monitor" });
+
+function syncSnapshot(extra?: {
+  trailingSLPct?: number | null;
+  mtmPct?: number | null;
+}) {
+  updateAutoExitSnapshot({
+    running: autoExitState.running,
+    exited: autoExitState.exited,
+    mtm: autoExitState.mtm,
+    trailingSL: autoExitState.trailingSL,
+    cutReason: autoExitState.cutReason,
+    summary: autoExitState.summary,
+    logs: autoExitState.logs.slice(-100),
+    trailingSLPct: extra?.trailingSLPct ?? getAutoExitSnapshot().trailingSLPct,
+    mtmPct: extra?.mtmPct ?? getAutoExitSnapshot().mtmPct,
+  });
+}
 
 
 // Helper to get headers as HeadersInit
@@ -67,6 +87,7 @@ export async function POST(req: NextRequest) {
     if (autoExitState.running) {
       autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Start requested but already running.`);
       addLog("warn", "Auto-exit-monitor: Start requested but already running", { endpoint: "auto-exit-monitor" });
+      syncSnapshot();
       return NextResponse.json({ success: false, error: "Already running" });
     }
     autoExitState.running = true;
@@ -75,6 +96,7 @@ export async function POST(req: NextRequest) {
     autoExitState.summary = null;
     autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Auto-exit started.`);
     addLog("info", "Auto-exit-monitor: Auto-exit started", { endpoint: "auto-exit-monitor" });
+    syncSnapshot({ trailingSLPct: null, mtmPct: null });
     const settingsData = await fetchSettings(req);
     const pollInterval = Number(settingsData.settings?.schedulerFrequency) || 2000;
     const capital = Number(settingsData.settings?.totalCapital) || 0;
@@ -107,30 +129,12 @@ export async function POST(req: NextRequest) {
         // Convert stopLossPct back to value
         const trailing = capital * (result.stopLossPct / 100);
         autoExitState.trailingSL = trailing;
-        // Only update DB if values changed
         if (lastTrailing !== trailing || lastMTM !== total) {
-          try {
-            const { db } = await connectToDatabase();
-            await db.collection('trailing_sl_status').updateOne(
-              { _id: 'current' as any },
-              {
-                $set: {
-                  trailingSL: trailing,
-                  mtm: total,
-                  trailingSLPct: result.stopLossPct,
-                  mtmPct: currentMtmPct,
-                  updatedAt: new Date(),
-                  running: autoExitState.running,
-                  exited: autoExitState.exited
-                }
-              },
-              { upsert: true }
-            );
-            lastTrailing = trailing;
-            lastMTM = total;
-          } catch (err) {
-            addLog("error", "Auto-exit-monitor: Failed to save trailing SL to DB", { endpoint: "auto-exit-monitor", error: err });
-          }
+          lastTrailing = trailing;
+          lastMTM = total;
+          syncSnapshot({ trailingSLPct: result.stopLossPct, mtmPct: currentMtmPct });
+        } else {
+          syncSnapshot({ trailingSLPct: result.stopLossPct, mtmPct: currentMtmPct });
         }
         // Update trailing state for next tick
         lastTrailingLevelPct = result.lastTrailingLevelPct;
@@ -148,6 +152,7 @@ export async function POST(req: NextRequest) {
           clearInterval(autoExitState.interval!);
           autoExitState.interval = null;
           autoExitState.summary = await exitAll(req);
+          syncSnapshot({ trailingSLPct: result.stopLossPct, mtmPct: currentMtmPct });
         }
       } catch (e) {
         autoExitState.running = false;
@@ -156,6 +161,7 @@ export async function POST(req: NextRequest) {
         addLog("error", "Auto-exit-monitor: Error in auto-exit monitoring", { endpoint: "auto-exit-monitor", error: e });
         clearInterval(autoExitState.interval!);
         autoExitState.interval = null;
+        syncSnapshot();
       }
     }, pollInterval);
     return NextResponse.json({ success: true });
@@ -174,6 +180,7 @@ export async function POST(req: NextRequest) {
     autoExitState.interval = null;
     autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Auto-exit stopped by user.`);
     addLog("info", "Auto-exit-monitor: Auto-exit stopped by user", { endpoint: "auto-exit-monitor" });
+    syncSnapshot();
     return NextResponse.json({ success: true });
   }
   return NextResponse.json({ success: false, error: "Invalid action" });
@@ -182,11 +189,6 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   // Return current state
   return NextResponse.json({
-    running: autoExitState.running,
-    mtm: autoExitState.mtm,
-    trailingSL: autoExitState.trailingSL,
-    cutReason: autoExitState.cutReason,
-    summary: autoExitState.summary,
-    logs: autoExitState.logs.slice(-100),
+    ...getAutoExitSnapshot(),
   });
 }

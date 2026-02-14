@@ -293,6 +293,9 @@ export default function OptionsPositionsWidget() {
       .then(slRes => {
         if (slRes && slRes.status) {
           setTrailingSLStatus(slRes.status);
+          if (typeof slRes.status.running === 'boolean') {
+            setAutoExitRunning(slRes.status.running);
+          }
         }
       })
       .catch(() => { });
