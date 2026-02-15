@@ -18,8 +18,21 @@ let autoExitState = {
   interval: null as NodeJS.Timeout | null,
   summary: null as any,
   logs: [] as string[],
+  // persistent tick state for scheduler-driven ticks
+  lastTrailingLevelPct: null as number | null,
+  previousStopLossPct: null as number | null,
+  lastTrailing: null as number | null,
+  lastMTM: null as number | null,
 };
 addLog("info", "Auto-exit-monitor: Initialized state", { endpoint: "auto-exit-monitor" });
+
+const SCHEDULER_SECRET = process.env.SCHEDULER_SECRET || null;
+
+function isValidSchedulerRequest(req: NextRequest) {
+  if (!SCHEDULER_SECRET) return false;
+  const header = req.headers.get('x-scheduler-secret') || req.headers.get('x-internal-secret');
+  return !!header && header === SCHEDULER_SECRET;
+}
 
 function syncSnapshot(extra?: {
   trailingSLPct?: number | null;
@@ -81,8 +94,85 @@ async function exitAll(req: NextRequest) {
   return res.json();
 }
 
+// Perform a single monitoring tick. Uses and updates module-level autoExitState so it can be
+// invoked by an external scheduler (server cron, Vercel cron, GitHub Actions) via POST { action: 'tick' }
+async function performTick(req: NextRequest) {
+  try {
+    if (!autoExitState.running || autoExitState.exited) return;
+    const settingsData = await fetchSettings(req);
+    const capital = Number(settingsData.settings?.totalCapital) || 0;
+    const trailingSettings = {
+      initialStopLossPct: Number(settingsData.settings?.initialStopLossPct) || 1,
+      breakEvenTriggerPct: Number(settingsData.settings?.breakEvenTriggerPct) || 1,
+      profitLockTriggerPct: Number(settingsData.settings?.profitLockTriggerPct) || 2,
+      lockedProfitPct: Number(settingsData.settings?.lockedProfitPct) || 1,
+      trailingStepPct: Number(settingsData.settings?.trailingStepPct) || 1,
+      trailingGapPct: Number(settingsData.settings?.trailingGapPct) || 0.5,
+    };
+
+    const d = await fetchPositions(req);
+    const total = d.positions?.reduce((sum: number, p: any) => sum + (Number(p.unrealized) || 0), 0) ?? 0;
+    autoExitState.mtm = total;
+    const currentMtmPct = capital ? (total / capital) * 100 : 0;
+
+    const lastTrailingLevelPct = autoExitState.lastTrailingLevelPct;
+    const previousStopLossPct = autoExitState.previousStopLossPct ?? -trailingSettings.initialStopLossPct;
+
+    const result = calculateTrailingStopLoss(
+      trailingSettings,
+      currentMtmPct,
+      lastTrailingLevelPct,
+      previousStopLossPct
+    );
+
+    console.log("[AutoExit] Tick evaluated", { totalUnrealized: total, mtmPct: currentMtmPct, stopLossPct: result.stopLossPct, shouldExit: result.shouldExit });
+
+    const trailing = capital * (result.stopLossPct / 100);
+    autoExitState.trailingSL = trailing;
+    autoExitState.lastTrailing = trailing;
+    autoExitState.lastMTM = total;
+    autoExitState.lastTrailingLevelPct = result.lastTrailingLevelPct;
+    autoExitState.previousStopLossPct = result.stopLossPct;
+
+    syncSnapshot({ trailingSLPct: result.stopLossPct, mtmPct: currentMtmPct });
+
+    if (result.shouldExit && !autoExitState.exited) {
+      autoExitState.running = false;
+      autoExitState.exited = true;
+      autoExitState.cutReason = `MTM hit trailing stop loss (₹${trailing}). Trade auto-cut.`;
+      addLog("info", "Auto-exit-monitor: MTM hit trailing stop loss", {
+        endpoint: "auto-exit-monitor",
+        reason: autoExitState.cutReason,
+        mtm: total,
+        trailingSL: trailing,
+      });
+      if (autoExitState.interval) {
+        clearInterval(autoExitState.interval);
+        autoExitState.interval = null;
+      }
+      autoExitState.summary = await exitAll(req);
+      syncSnapshot({ trailingSLPct: result.stopLossPct, mtmPct: currentMtmPct });
+    }
+  } catch (e) {
+    autoExitState.running = false;
+    autoExitState.cutReason = "Error in auto-exit monitoring.";
+    autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Error in auto-exit monitoring.`);
+    addLog("error", "Auto-exit-monitor: Error in auto-exit monitoring", { endpoint: "auto-exit-monitor", error: e });
+    if (autoExitState.interval) {
+      clearInterval(autoExitState.interval);
+      autoExitState.interval = null;
+    }
+    syncSnapshot();
+  }
+}
+
 export async function POST(req: NextRequest) {
   const { action } = await req.json();
+  // If this is a scheduler tick request, require the scheduler secret when configured
+  if (action === 'tick' && SCHEDULER_SECRET && !isValidSchedulerRequest(req)) {
+    addLog('warn', 'Auto-exit-monitor: Rejected tick - invalid scheduler secret', { endpoint: 'auto-exit-monitor' });
+    return NextResponse.json({ success: false, error: 'Invalid scheduler secret' }, { status: 401 });
+  }
   if (action === "start") {
     if (autoExitState.running) {
       autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Start requested but already running.`);
@@ -99,88 +189,20 @@ export async function POST(req: NextRequest) {
     syncSnapshot({ trailingSLPct: null, mtmPct: null });
     const settingsData = await fetchSettings(req);
     const pollInterval = Number(settingsData.settings?.schedulerFrequency) || 2000;
-    const capital = Number(settingsData.settings?.totalCapital) || 0;
-    const trailingSettings = {
-      initialStopLossPct: Number(settingsData.settings?.initialStopLossPct) || 1,
-      breakEvenTriggerPct: Number(settingsData.settings?.breakEvenTriggerPct) || 1,
-      profitLockTriggerPct: Number(settingsData.settings?.profitLockTriggerPct) || 2,
-      lockedProfitPct: Number(settingsData.settings?.lockedProfitPct) || 1,
-      trailingStepPct: Number(settingsData.settings?.trailingStepPct) || 1,
-      trailingGapPct: Number(settingsData.settings?.trailingGapPct) || 0.5,
-    };
-    let lastTrailingLevelPct: number | null = null;
-    let previousStopLossPct: number = -trailingSettings.initialStopLossPct;
-    let lastTrailing: number | null = null;
-    let lastMTM: number | null = null;
-    autoExitState.interval = setInterval(async () => {
-      try {
-        if (!autoExitState.running || autoExitState.exited) return;
-        const d = await fetchPositions(req);
-        const total = d.positions?.reduce((sum: number, p: any) => sum + (Number(p.unrealized) || 0), 0) ?? 0;
-        autoExitState.mtm = total;
-        // Calculate MTM as percent of capital
-        const currentMtmPct = capital ? (total / capital) * 100 : 0;
-        const result = calculateTrailingStopLoss(
-          trailingSettings,
-          currentMtmPct,
-          lastTrailingLevelPct,
-          previousStopLossPct
-        );
-        console.log(
-          "[AutoExit] Evaluated trailing stop",
-          {
-            totalUnrealized: total,
-            mtmPct: currentMtmPct,
-            stopLossPct: result.stopLossPct,
-            trailingLevelPct: result.lastTrailingLevelPct,
-            shouldExit: result.shouldExit,
-            running: autoExitState.running,
-          }
-        );
-        // Convert stopLossPct back to value
-        const trailing = capital * (result.stopLossPct / 100);
-        autoExitState.trailingSL = trailing;
-        if (lastTrailing !== trailing || lastMTM !== total) {
-          lastTrailing = trailing;
-          lastMTM = total;
-          syncSnapshot({ trailingSLPct: result.stopLossPct, mtmPct: currentMtmPct });
-        } else {
-          syncSnapshot({ trailingSLPct: result.stopLossPct, mtmPct: currentMtmPct });
-        }
-        // Update trailing state for next tick
-        lastTrailingLevelPct = result.lastTrailingLevelPct;
-        previousStopLossPct = result.stopLossPct;
-        if (result.shouldExit && !autoExitState.exited) {
-          console.log("[AutoExit] Exit triggered", {
-            totalUnrealized: total,
-            trailingSL: trailing,
-            mtmPct: currentMtmPct,
-            stopLossPct: result.stopLossPct,
-          });
-          autoExitState.running = false;
-          autoExitState.exited = true;
-          autoExitState.cutReason = `MTM hit trailing stop loss (₹${trailing}). Trade auto-cut.`;
-          addLog("info", "Auto-exit-monitor: MTM hit trailing stop loss", {
-            endpoint: "auto-exit-monitor",
-            reason: autoExitState.cutReason,
-            mtm: total,
-            trailingSL: trailing
-          });
-          clearInterval(autoExitState.interval!);
-          autoExitState.interval = null;
-          autoExitState.summary = await exitAll(req);
-          syncSnapshot({ trailingSLPct: result.stopLossPct, mtmPct: currentMtmPct });
-        }
-      } catch (e) {
-        autoExitState.running = false;
-        autoExitState.cutReason = "Error in auto-exit monitoring.";
-        autoExitState.logs.push(`[${new Date().toLocaleTimeString()}] Error in auto-exit monitoring.`);
-        addLog("error", "Auto-exit-monitor: Error in auto-exit monitoring", { endpoint: "auto-exit-monitor", error: e });
-        clearInterval(autoExitState.interval!);
-        autoExitState.interval = null;
-        syncSnapshot();
-      }
-    }, pollInterval);
+
+    // Try to perform an immediate tick and then start a local interval when supported.
+    try {
+      await performTick(req);
+      autoExitState.interval = setInterval(() => {
+        void performTick(req);
+      }, pollInterval);
+    } catch (e) {
+      addLog("info", "Auto-exit-monitor: Could not start local interval; expect external scheduler to call tick.", { endpoint: "auto-exit-monitor", error: e });
+    }
+    return NextResponse.json({ success: true });
+  } else if (action === "tick") {
+    // Single tick invocation for external schedulers (cron jobs, background workers)
+    await performTick(req);
     return NextResponse.json({ success: true });
   } else if (action === "stop") {
     if (autoExitState.interval) {

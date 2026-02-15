@@ -21,6 +21,11 @@ const navItems: NavItem[] = [
     path: "/positions",
   },
   {
+    icon: <GridIcon />, 
+    name: "5Paisa Monitor",
+    path: "/5paisa-monitor",
+  },
+  {
     icon: <InfoIcon />, 
     name: "Settings",
     path: "/settings",
