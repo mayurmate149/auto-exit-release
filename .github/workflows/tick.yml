@@ -1,0 +1,33 @@
+name: Auto-exit Monitor Tick
+
+on:
+  schedule:
+    # Runs every 1 minute — adjust as needed (GitHub minimum is 1 minute)
+    - cron: '*/1 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send tick to auto-exit-monitor
+        env:
+          DEPLOYMENT_URL: ${{ secrets.DEPLOYMENT_URL }}
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+        run: |
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "DEPLOYMENT_URL secret is not set"; exit 1;
+          fi
+          if [ -z "$SCHEDULER_SECRET" ]; then
+            echo "SCHEDULER_SECRET secret is not set"; exit 1;
+          fi
+          set -euo pipefail
+          echo "Calling $DEPLOYMENT_URL/api/positions/auto-exit-monitor"
+          STATUS=$(curl -s -o /dev/stderr -w "%{http_code}" -X POST "$DEPLOYMENT_URL/api/positions/auto-exit-monitor" \
+            -H "Content-Type: application/json" \
+            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            -d '{"action":"tick"}')
+          echo "Response HTTP status: $STATUS"
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "201" ] && [ "$STATUS" != "204" ]; then
+            echo "Tick request failed with status $STATUS"; exit 1;
+          fi
